@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoFluent | Master English Conversations with AI</title>
+    <meta name="description" content="EchoFluent is your personal AI English coach. Practice real-world conversations, perfect your pronunciation, and master 3,000+ words with help from Priya, your AI guide.">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="images/logo.png" type="image/png">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <div class="logo">
+                <img src="images/logo.png" alt="EchoFluent Logo">
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#about">About</a>
+                <a href="#" class="btn btn-primary">Join Waitlist</a>
+            </div>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero container">
+            <div class="hero-content">
+                <h1 class="gradient-text">Speak English with Confidence.</h1>
+                <p>EchoFluent is your personal AI English coach that listens, speaks, and guides you to fluency through real-world scenarios.</p>
+                <div class="hero-btns">
+                    <a href="#" class="btn btn-large btn-primary">Start Your Journey</a>
+                    <a href="#features" class="btn btn-large btn-outline">See How It Works</a>
+                </div>
+            </div>
+            <div class="hero-visual">
+                <div class="glass-card chat-demo-container">
+                    <div class="card-header">
+                        <div class="ai-avatar">P</div>
+                        <div class="ai-info">
+                            <span class="ai-name">Coach Priya</span>
+                            <span class="ai-status">Online</span>
+                        </div>
+                    </div>
+                    <div class="chat-messages" id="chat-messages">
+                        <div class="chat-bubble ai">Hi! I'm Priya. Ready to practice some English today? You can try chatting with me right here!</div>
+                    </div>
+                    <div class="chat-input-area">
+                        <input type="text" id="demo-chat-input" placeholder="Type a message...">
+                        <button id="send-demo-chat">
+                            <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features container">
+            <h2 class="section-title">Everything you need to go fluent</h2>
+            <div class="feature-grid">
+                <div class="feature-card glass-card">
+                    <div class="feature-icon">💬</div>
+                    <h3>Real-time Conversations</h3>
+                    <p>Chat with Priya, our advanced AI coach, across hundreds of real-life scenarios—from job interviews to casual coffee talks.</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="feature-icon">🎙️</div>
+                    <h3>Pronunciation Analysis</h3>
+                    <p>Get instant, precise feedback on your accent and clarity. Perfect your sounds with our specialized analysis engine.</p>
+                </div>
+                <div class="feature-card glass-card vocab-card-3d">
+                    <div class="vocab-card-inner">
+                        <div class="vocab-card-front">
+                            <div class="feature-icon">📚</div>
+                            <h3>Smart Vocabulary</h3>
+                            <p>Tap to reveal the power of active recall.</p>
+                        </div>
+                        <div class="vocab-card-back">
+                            <h3>"Serendipity"</h3>
+                            <p>The occurrence of events by chance in a happy or beneficial way.</p>
+                            <span class="vocab-badge">Mastered</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="feature-card glass-card" id="daily-origin-card">
+                    <div class="feature-icon">💡</div>
+                    <h3 id="origin-word-title">Did You Know?</h3>
+                    <div id="origin-loader" class="loader"></div>
+                    <div id="origin-content" class="hidden">
+                        <p id="origin-text-preview" class="origin-preview"></p>
+                        <div id="origin-full-story" class="origin-full hidden">
+                            <hr class="origin-divider">
+                            <p id="origin-story-text"></p>
+                        </div>
+                        <button id="expand-origin-btn" class="btn-text">Read Full Story ▾</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="cta container">
+            <div class="cta-card">
+                <h2>Ready to transform your English?</h2>
+                <p>Join the private beta of EchoFluent today and start speaking like a pro.</p>
+                <form class="waitlist-form">
+                    <input type="email" placeholder="Enter your email" required>
+                    <button type="submit" class="btn btn-primary">Reserve Spot</button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container footer-content">
+            <div class="footer-brand">
+                <img src="images/logo.png" alt="EchoFluent Logo">
+                <p>&copy; 2026 EchoFluent. All rights reserved.</p>
+            </div>
+            <div class="footer-links">
+                <div class="link-group">
+                    <h4>Product</h4>
+                    <a href="#">Features</a>
+                    <a href="#">Pricing</a>
+                </div>
+                <div class="link-group">
+                    <h4>Company</h4>
+                    <a href="#">About</a>
+                    <a href="#">Contact</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/script.js"></script>
+</body>
+</html>

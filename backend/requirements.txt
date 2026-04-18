@@ -1,0 +1,30 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-dotenv==1.0.1
+pydantic>=2.7.1
+pydantic-settings==2.3.0
+
+# Groq AI + Audio
+groq==0.9.0
+httpx==0.27.0
+
+# Database
+asyncpg>=0.29.0
+sqlalchemy[asyncio]>=2.0.30
+alembic==1.13.1
+
+# Redis
+redis==5.0.4
+upstash-redis==1.7.0
+
+# Auth (Firebase Admin)
+firebase-admin==6.5.0
+
+# Payments
+razorpay==1.4.1
+
+# Utilities
+python-multipart==0.0.9
+aiofiles==23.2.1
+requests==2.32.3
+google-cloud-texttospeech==2.16.3
