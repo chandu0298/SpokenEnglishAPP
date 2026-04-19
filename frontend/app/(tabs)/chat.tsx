@@ -42,6 +42,10 @@ export default function ChatScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'voice' | 'text'>('text');
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentSpeakingId, setCurrentSpeakingId] = useState<string | null>(null);
   const { isRecording, startRecording, stopRecording } = useVoiceRecorder();
   const flatListRef = useRef<FlatList>(null);
 
@@ -130,13 +134,77 @@ export default function ChatScreen() {
     }
   }
 
-  const handlePlayback = (text: string, rate: number = 0.9) => {
+  const handlePlayback = (text: string, messageId: string, rate: number = 0.9) => {
+    // If muted, don't play audio
+    if (isMuted) return;
+    
+    // If already speaking the same message, toggle pause/resume
+    if (currentSpeakingId === messageId && isSpeaking) {
+      if (isPaused) {
+        Speech.resume();
+        setIsPaused(false);
+      } else {
+        Speech.pause();
+        setIsPaused(true);
+      }
+      return;
+    }
+    
+    // Stop any current speech and start new
     Speech.stop();
-    Speech.speak(text, { language: 'en-US', rate });
+    setCurrentSpeakingId(messageId);
+    setIsSpeaking(true);
+    setIsPaused(false);
+    
+    Speech.speak(text, { 
+      language: 'en-US', 
+      rate,
+      onDone: () => {
+        setIsSpeaking(false);
+        setIsPaused(false);
+        setCurrentSpeakingId(null);
+      },
+      onStopped: () => {
+        setIsSpeaking(false);
+        setIsPaused(false);
+        setCurrentSpeakingId(null);
+      }
+    });
   };
 
-  function renderMessage({ item }: { item: ChatMessage }) {
+  const handlePause = () => {
+    if (isSpeaking && !isPaused) {
+      Speech.pause();
+      setIsPaused(true);
+    } else if (isSpeaking && isPaused) {
+      Speech.resume();
+      setIsPaused(false);
+    }
+  };
+
+  const handleStop = () => {
+    Speech.stop();
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setCurrentSpeakingId(null);
+  };
+
+  const toggleMute = () => {
+    if (!isMuted && isSpeaking) {
+      // If turning on mute while speaking, stop the speech
+      Speech.stop();
+      setIsSpeaking(false);
+      setIsPaused(false);
+      setCurrentSpeakingId(null);
+    }
+    setIsMuted(!isMuted);
+  };
+
+  function renderMessage({ item, index }: { item: ChatMessage; index: number }) {
     const isCoach = item.role === 'coach';
+    const messageId = item.id || `msg-${index}`;
+    const isCurrentlySpeaking = currentSpeakingId === messageId && isSpeaking;
+    
     return (
       <View style={{ marginBottom: Spacing.md }}>
         <View style={[styles.messageRow, !isCoach && { justifyContent: 'flex-end' }]}>
@@ -148,9 +216,49 @@ export default function ChatScreen() {
             
             {isCoach && (
               <View style={styles.coachControls}>
-                <TouchableOpacity onPress={() => handlePlayback(item.text)} style={styles.controlBtn}>
-                  <Ionicons name="volume-medium" size={24} color={Colors.primary} />
-                </TouchableOpacity>
+                {/* Audio Controls Group */}
+                <View style={styles.audioControlsGroup}>
+                  {/* Mute Toggle */}
+                  <TouchableOpacity 
+                    onPress={toggleMute} 
+                    style={[styles.controlBtn, isMuted && styles.mutedBtn]}
+                  >
+                    <Ionicons 
+                      name={isMuted ? "volume-mute" : "volume-medium"} 
+                      size={24} 
+                      color={isMuted ? Colors.textSecondary : Colors.primary} 
+                    />
+                  </TouchableOpacity>
+                  
+                  {/* Play/Pause Button */}
+                  {!isMuted && (
+                    <TouchableOpacity 
+                      onPress={() => handlePlayback(item.text, messageId)} 
+                      style={[styles.controlBtn, isCurrentlySpeaking && styles.activeControlBtn]}
+                    >
+                      <Ionicons 
+                        name={isCurrentlySpeaking && !isPaused ? "pause" : "play"} 
+                        size={22} 
+                        color={Colors.primary} 
+                      />
+                    </TouchableOpacity>
+                  )}
+                  
+                  {/* Stop Button - only show when speaking this message */}
+                  {isCurrentlySpeaking && !isMuted && (
+                    <TouchableOpacity 
+                      onPress={handleStop} 
+                      style={styles.controlBtn}
+                    >
+                      <Ionicons 
+                        name="stop" 
+                        size={20} 
+                        color="#EF4444" 
+                      />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                
                 <TouchableOpacity 
                    onPress={() => regenerateResponse(item.originalQuery || messages[messages.indexOf(item)-1]?.text || '')} 
                    style={styles.explainBtn}
@@ -326,9 +434,28 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: Colors.border,
     paddingTop: 12,
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  audioControlsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: 20,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   controlBtn: {
-    padding: 4,
+    padding: 6,
+    borderRadius: 16,
+  },
+  activeControlBtn: {
+    backgroundColor: Colors.primary + '15',
+  },
+  mutedBtn: {
+    opacity: 0.6,
   },
   explainBtn: {
     flexDirection: 'row',
