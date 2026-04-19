@@ -15,7 +15,11 @@ engine = create_async_engine(
     settings.database_url.replace("?ssl=true", ""),
     connect_args={"ssl": ssl_context},
     echo=False,  # Set to True for debugging queries
-    future=True
+    future=True,
+    pool_pre_ping=True,  # Check connection health before using
+    pool_recycle=300,    # Recycle connections after 5 minutes
+    pool_size=5,
+    max_overflow=10,
 )
 
 # Async Session Maker
