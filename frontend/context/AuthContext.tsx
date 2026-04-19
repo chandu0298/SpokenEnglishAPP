@@ -43,10 +43,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Attempt to fetch profile from our backend
           const userProfile = await getMyProfile();
           setProfile(userProfile);
-        } catch (err) {
-          console.error('AuthContext: Initial profile fetch failed:', err);
-          // If profile fetch fails, we stay loading or show error state 
-          // usually profile might not exist for a brand new user
+        } catch (err: any) {
+          // 404 is expected for new users - profile will be created on first backend interaction
+          if (err?.response?.status !== 404) {
+            console.error('AuthContext: Profile fetch failed:', err);
+          }
+          // App continues normally - profile will sync on next interaction
         }
       } else {
         setProfile(null);
