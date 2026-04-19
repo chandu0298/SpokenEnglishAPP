@@ -41,12 +41,16 @@ export interface SessionResponse {
   cards: VocabCard[];
   batch_info?: {
     current_batch: number;
+    total_batches: number;  // Always 10
     words_seen_total: number;
     words_in_current_batch: number;
-    total_words_in_level: number;
-    total_batches: number;
+    words_per_batch: number;  // Always 50
+    target_words_per_level: number;  // Always 500
+    actual_words_in_db: number;
     level_complete: boolean;
     next_batch_locked: boolean;
+    words_exhausted: boolean;
+    revision_pending: number;
   };
 }
 
@@ -113,7 +117,9 @@ export interface LevelStats {
   total: number;
   seen?: number;
   current_batch?: number;
-  total_batches?: number;
+  total_batches?: number;  // Always 10
+  target_words?: number;   // Always 500
+  next_batch_locked?: boolean;
 }
 
 export async function fetchLevelStats(userId: string): Promise<Record<string, LevelStats>> {

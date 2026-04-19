@@ -390,7 +390,8 @@ export default function VocabScreen() {
         {LEVELS.map((level) => {
           const stats = levelStats[level.id];
           const currentBatch = stats?.current_batch || 1;
-          const totalBatches = stats?.total_batches || 1;
+          const totalBatches = 10;  // Always 10 batches (500 words / 50 per batch)
+          const isLocked = stats?.next_batch_locked || false;
           
           return (
             <TouchableOpacity
@@ -403,18 +404,20 @@ export default function VocabScreen() {
               <Text style={[styles.levelLabel, { color: level.color }]}>{level.label}</Text>
               <Text style={styles.levelSubtitle}>{level.subtitle}</Text>
               
-              {/* Batch Progress Indicator */}
-              {!isRevisionMode && totalBatches > 1 && (
-                <Text style={styles.batchText}>
-                  Batch {currentBatch}/{totalBatches}
+              {/* Batch Progress Indicator - Always show X/10 */}
+              {!isRevisionMode && (
+                <Text style={[styles.batchText, isLocked && { color: '#EF4444' }]}>
+                  {isLocked ? '🔒 ' : ''}Batch {currentBatch}/{totalBatches}
                 </Text>
               )}
               
-              <View style={[styles.levelBadge, { backgroundColor: level.color }]}>
+              <View style={[styles.levelBadge, { backgroundColor: isLocked ? '#EF4444' : level.color }]}>
                 <Text style={styles.levelBadgeText}>
                   {isRevisionMode 
                     ? `${stats?.due || 0} to review` 
-                    : `${stats?.new || 0} new words`}
+                    : isLocked 
+                      ? `${stats?.due || 0} revision pending`
+                      : `${stats?.new || 0} new words`}
                 </Text>
               </View>
             </TouchableOpacity>

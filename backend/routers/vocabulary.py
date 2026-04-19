@@ -157,15 +157,21 @@ async def start_session(
     """
     Fetches new words for the requested level that the user hasn't seen yet.
     
-    Batch Progression Logic:
+    Batch Progression Logic (10 batches of 50 words = 500 words per level):
     - Users learn words in batches of 50
-    - When a batch is complete (no new words left AND no words due for revision),
-      the next batch of 50 unseen words is unlocked automatically
+    - Batch only advances when:
+      1. All 50 words in current batch have been seen
+      2. AND all spaced revision words are completed (due_count = 0)
     - Words never repeat - once seen, they stay in the user's progress
     """
     level = request.level.upper()
     user_uuid = user.id
     today = date.today()
+    
+    # Constants
+    WORDS_PER_BATCH = 50
+    TOTAL_BATCHES = 10  # Fixed: 10 batches per level (500 words total)
+    TARGET_WORDS_PER_LEVEL = WORDS_PER_BATCH * TOTAL_BATCHES  # 500
 
     # 1. Get all word IDs this user already has progress for at this level
     existing_result = await db.execute(
@@ -180,7 +186,7 @@ async def start_session(
     )
     existing_word_ids = set(existing_result.scalars().all())
 
-    # 2. Check if there are any words due for revision
+    # 2. Check if there are any words due for revision (spaced revision pending)
     due_count_result = await db.execute(
         select(func.count(UserVocabProgress.id))
         .join(VocabularyWord, UserVocabProgress.word_id == VocabularyWord.id)
@@ -196,22 +202,41 @@ async def start_session(
 
     # 3. Calculate current batch info
     words_seen = len(existing_word_ids)
-    current_batch = (words_seen // 50) + 1
-    words_in_current_batch = words_seen % 50
-
-    # 4. Determine how many new words to fetch
-    # If user has seen some words in current batch but not all 50, continue that batch
-    # If batch is complete (50 words seen) AND no due words, start next batch
+    completed_batches = words_seen // WORDS_PER_BATCH  # Fully completed batches
+    words_in_current_batch = words_seen % WORDS_PER_BATCH
+    
+    # Current batch number (1-indexed)
+    # If words_in_current_batch > 0, user is in the middle of a batch
+    # If words_in_current_batch == 0 and words_seen > 0, user completed a batch
     if words_in_current_batch > 0:
-        # Continue current batch - fetch remaining words up to 50
-        remaining_in_batch = 50 - words_in_current_batch
-        words_to_fetch = min(request.limit, remaining_in_batch)
-    elif words_seen > 0 and due_count > 0:
-        # Batch complete but has due words - don't unlock new batch yet
-        words_to_fetch = 0
+        current_batch = completed_batches + 1
+    elif words_seen > 0:
+        # Batch complete - check if can advance
+        if due_count == 0:
+            # Can advance to next batch
+            current_batch = min(completed_batches + 1, TOTAL_BATCHES)
+        else:
+            # Stuck on current batch until revision complete
+            current_batch = completed_batches
     else:
-        # Either fresh start or batch complete with no due words - fetch new batch
-        words_to_fetch = request.limit
+        # Fresh start
+        current_batch = 1
+
+    # 4. Determine if user can get new words
+    # Block new words if:
+    # - Current batch is complete (50 words seen) BUT has pending revision
+    batch_complete = words_in_current_batch == 0 and words_seen > 0
+    next_batch_locked = batch_complete and due_count > 0
+    
+    words_to_fetch = 0
+    if not next_batch_locked:
+        if words_in_current_batch > 0:
+            # Continue current batch - fetch remaining words up to 50
+            remaining_in_batch = WORDS_PER_BATCH - words_in_current_batch
+            words_to_fetch = min(request.limit, remaining_in_batch)
+        else:
+            # Fresh start or batch complete with no due words - fetch new batch
+            words_to_fetch = min(request.limit, WORDS_PER_BATCH)
 
     # 5. Grab new words the user hasn't seen
     new_words = []
@@ -229,12 +254,12 @@ async def start_session(
         )
         new_words = new_words_result.scalars().all()
 
-    # 6. Get total words available at this level
+    # 6. Get actual words available in DB for this level
     total_words_result = await db.execute(
         select(func.count(VocabularyWord.id))
         .where(VocabularyWord.level == level)
     )
-    total_words_in_level = total_words_result.scalar() or 0
+    total_words_in_db = total_words_result.scalar() or 0
 
     cards = []
     for word in new_words:
@@ -252,8 +277,11 @@ async def start_session(
             "level": word.level,
         })
 
-    # Calculate if level is fully complete
-    level_complete = words_seen >= total_words_in_level and due_count == 0
+    # Calculate if level is fully complete (all 500 words done and no pending revision)
+    level_complete = words_seen >= TARGET_WORDS_PER_LEVEL and due_count == 0
+    
+    # Also check if we've run out of words in DB (need more words generated)
+    words_exhausted = len(new_words) == 0 and words_to_fetch > 0
 
     return {
         "level": level,
@@ -263,12 +291,16 @@ async def start_session(
         "cards": cards,
         "batch_info": {
             "current_batch": current_batch,
+            "total_batches": TOTAL_BATCHES,  # Always 10
             "words_seen_total": words_seen,
-            "words_in_current_batch": words_in_current_batch if words_in_current_batch > 0 else (50 if words_seen > 0 else 0),
-            "total_words_in_level": total_words_in_level,
-            "total_batches": (total_words_in_level + 49) // 50,  # Ceiling division
+            "words_in_current_batch": words_in_current_batch,
+            "words_per_batch": WORDS_PER_BATCH,
+            "target_words_per_level": TARGET_WORDS_PER_LEVEL,
+            "actual_words_in_db": total_words_in_db,
             "level_complete": level_complete,
-            "next_batch_locked": due_count > 0 and words_in_current_batch == 0 and words_seen > 0,
+            "next_batch_locked": next_batch_locked,
+            "words_exhausted": words_exhausted,
+            "revision_pending": due_count,
         },
     }
 
@@ -493,15 +525,30 @@ async def get_level_stats(
 ):
     """
     Returns new_count, due_count, and batch progress for each CEFR level.
+    Always shows X/10 batches (500 words target per level).
     """
     user_uuid = user.id
     today = date.today()
+    
+    # Constants - Fixed for all levels
+    WORDS_PER_BATCH = 50
+    TOTAL_BATCHES = 10  # Always 10 batches per level
+    TARGET_WORDS_PER_LEVEL = 500
 
     levels_stats = {}
     for level in ["B1", "B2", "C1", "C2"]:
-        levels_stats[level] = {"new": 0, "due": 0, "total": 0, "seen": 0, "current_batch": 1, "total_batches": 1}
+        levels_stats[level] = {
+            "new": 0, 
+            "due": 0, 
+            "total": 0,  # Actual words in DB
+            "seen": 0,
+            "current_batch": 1, 
+            "total_batches": TOTAL_BATCHES,  # Always 10
+            "target_words": TARGET_WORDS_PER_LEVEL,
+            "next_batch_locked": False
+        }
 
-    # Get total words per level
+    # Get actual total words per level in DB
     total_result = await db.execute(
         select(VocabularyWord.level, func.count(VocabularyWord.id))
         .group_by(VocabularyWord.level)
@@ -509,7 +556,6 @@ async def get_level_stats(
     for level, count in total_result.all():
         if level in levels_stats:
             levels_stats[level]["total"] = count
-            levels_stats[level]["total_batches"] = (count + 49) // 50  # Ceiling division
 
     # Get user progress per level
     progress_result = await db.execute(
@@ -530,31 +576,45 @@ async def get_level_stats(
             levels_stats[level]["seen"] = seen
             levels_stats[level]["due"] = due_count
             
-            # Calculate current batch
-            current_batch = (seen // 50) + 1
-            words_in_current_batch = seen % 50
+            # Calculate current batch (1-indexed)
+            completed_batches = seen // WORDS_PER_BATCH
+            words_in_current_batch = seen % WORDS_PER_BATCH
             
-            # If batch is complete (50 words) and no due words, show next batch as current
-            if words_in_current_batch == 0 and seen > 0 and due_count == 0:
-                current_batch = min(current_batch + 1, levels_stats[level]["total_batches"])
+            # Determine current batch number
+            if words_in_current_batch > 0:
+                # In the middle of a batch
+                current_batch = completed_batches + 1
+            elif seen > 0:
+                # Completed a full batch
+                if due_count == 0:
+                    # Can move to next batch
+                    current_batch = min(completed_batches + 1, TOTAL_BATCHES)
+                else:
+                    # Locked - must complete revision first
+                    current_batch = completed_batches
+                    levels_stats[level]["next_batch_locked"] = True
+            else:
+                # No progress yet
+                current_batch = 1
             
             levels_stats[level]["current_batch"] = current_batch
             
-            # Calculate new words available
-            # If batch complete but has due words, show 0 new (locked)
-            if words_in_current_batch == 0 and seen > 0 and due_count > 0:
+            # Calculate new words available in current batch
+            if levels_stats[level]["next_batch_locked"]:
+                # Batch locked - no new words until revision complete
                 levels_stats[level]["new"] = 0
             else:
-                # Show remaining words in current batch or next batch
-                levels_stats[level]["new"] = min(
-                    50 - words_in_current_batch if words_in_current_batch > 0 else 50,
-                    levels_stats[level]["total"] - seen
-                )
+                # Calculate remaining words in current batch
+                remaining_in_batch = WORDS_PER_BATCH - words_in_current_batch if words_in_current_batch > 0 else WORDS_PER_BATCH
+                # Cap by actual words available in DB
+                available_in_db = levels_stats[level]["total"] - seen
+                levels_stats[level]["new"] = min(remaining_in_batch, max(0, available_in_db))
 
     # For levels with no progress yet, show first batch available
     for level in levels_stats:
         if levels_stats[level]["seen"] == 0:
-            levels_stats[level]["new"] = min(50, levels_stats[level]["total"])
+            levels_stats[level]["new"] = min(WORDS_PER_BATCH, levels_stats[level]["total"])
+            levels_stats[level]["current_batch"] = 1
 
     return levels_stats
 
