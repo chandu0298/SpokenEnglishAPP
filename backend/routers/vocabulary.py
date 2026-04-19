@@ -599,14 +599,23 @@ async def get_level_stats(
             
             levels_stats[level]["current_batch"] = current_batch
             
-            # Calculate new words available in current batch
-            if levels_stats[level]["next_batch_locked"]:
-                # Batch locked - no new words until revision complete
-                levels_stats[level]["new"] = 0
+            # Calculate new words available
+            # IMPORTANT: If ANY words are due for revision, limit new words
+            # User should focus on revision before learning too many new words
+            if due_count > 0:
+                # Has pending revision - calculate carefully
+                if words_in_current_batch == 0 and seen > 0:
+                    # Full batch complete - lock completely until revision done
+                    levels_stats[level]["new"] = 0
+                    levels_stats[level]["next_batch_locked"] = True
+                else:
+                    # In middle of batch - allow finishing current batch but warn about revision
+                    remaining_in_batch = WORDS_PER_BATCH - words_in_current_batch
+                    available_in_db = levels_stats[level]["total"] - seen
+                    levels_stats[level]["new"] = min(remaining_in_batch, max(0, available_in_db))
             else:
-                # Calculate remaining words in current batch
+                # No pending revision - allow new words freely
                 remaining_in_batch = WORDS_PER_BATCH - words_in_current_batch if words_in_current_batch > 0 else WORDS_PER_BATCH
-                # Cap by actual words available in DB
                 available_in_db = levels_stats[level]["total"] - seen
                 levels_stats[level]["new"] = min(remaining_in_batch, max(0, available_in_db))
 
