@@ -155,7 +155,13 @@ async def start_session(
     user: User = Depends(get_current_user)
 ):
     """
-    Fetches ONLY completely new words for the requested level that the user hasn't seen yet.
+    Fetches new words for the requested level that the user hasn't seen yet.
+    
+    Batch Progression Logic:
+    - Users learn words in batches of 50
+    - When a batch is complete (no new words left AND no words due for revision),
+      the next batch of 50 unseen words is unlocked automatically
+    - Words never repeat - once seen, they stay in the user's progress
     """
     level = request.level.upper()
     user_uuid = user.id
@@ -174,19 +180,61 @@ async def start_session(
     )
     existing_word_ids = set(existing_result.scalars().all())
 
-    # 2. Grab new words the user hasn't seen
-    new_words_result = await db.execute(
-        select(VocabularyWord)
+    # 2. Check if there are any words due for revision
+    due_count_result = await db.execute(
+        select(func.count(UserVocabProgress.id))
+        .join(VocabularyWord, UserVocabProgress.word_id == VocabularyWord.id)
         .where(
             and_(
+                UserVocabProgress.user_id == user_uuid,
                 VocabularyWord.level == level,
-                VocabularyWord.id.notin_(existing_word_ids) if existing_word_ids else True,
+                UserVocabProgress.next_review <= today,
             )
         )
-        .order_by(VocabularyWord.id)
-        .limit(request.limit)
     )
-    new_words = new_words_result.scalars().all()
+    due_count = due_count_result.scalar() or 0
+
+    # 3. Calculate current batch info
+    words_seen = len(existing_word_ids)
+    current_batch = (words_seen // 50) + 1
+    words_in_current_batch = words_seen % 50
+
+    # 4. Determine how many new words to fetch
+    # If user has seen some words in current batch but not all 50, continue that batch
+    # If batch is complete (50 words seen) AND no due words, start next batch
+    if words_in_current_batch > 0:
+        # Continue current batch - fetch remaining words up to 50
+        remaining_in_batch = 50 - words_in_current_batch
+        words_to_fetch = min(request.limit, remaining_in_batch)
+    elif words_seen > 0 and due_count > 0:
+        # Batch complete but has due words - don't unlock new batch yet
+        words_to_fetch = 0
+    else:
+        # Either fresh start or batch complete with no due words - fetch new batch
+        words_to_fetch = request.limit
+
+    # 5. Grab new words the user hasn't seen
+    new_words = []
+    if words_to_fetch > 0:
+        new_words_result = await db.execute(
+            select(VocabularyWord)
+            .where(
+                and_(
+                    VocabularyWord.level == level,
+                    VocabularyWord.id.notin_(existing_word_ids) if existing_word_ids else True,
+                )
+            )
+            .order_by(VocabularyWord.id)
+            .limit(words_to_fetch)
+        )
+        new_words = new_words_result.scalars().all()
+
+    # 6. Get total words available at this level
+    total_words_result = await db.execute(
+        select(func.count(VocabularyWord.id))
+        .where(VocabularyWord.level == level)
+    )
+    total_words_in_level = total_words_result.scalar() or 0
 
     cards = []
     for word in new_words:
@@ -201,14 +249,27 @@ async def start_session(
             "correct_streak": 0,
             "total_attempts": 0,
             "is_new": True,
+            "level": word.level,
         })
+
+    # Calculate if level is fully complete
+    level_complete = words_seen >= total_words_in_level and due_count == 0
 
     return {
         "level": level,
         "session_size": len(cards),
-        "due_count": 0,
+        "due_count": due_count,
         "new_count": len(cards),
         "cards": cards,
+        "batch_info": {
+            "current_batch": current_batch,
+            "words_seen_total": words_seen,
+            "words_in_current_batch": words_in_current_batch if words_in_current_batch > 0 else (50 if words_seen > 0 else 0),
+            "total_words_in_level": total_words_in_level,
+            "total_batches": (total_words_in_level + 49) // 50,  # Ceiling division
+            "level_complete": level_complete,
+            "next_batch_locked": due_count > 0 and words_in_current_batch == 0 and words_seen > 0,
+        },
     }
 
 # ─── GET /revision ───────────────────────────────────────────────
@@ -431,21 +492,26 @@ async def get_level_stats(
     user: User = Depends(get_current_user)
 ):
     """
-    Returns new_count and due_count for each CEFR level.
+    Returns new_count, due_count, and batch progress for each CEFR level.
     """
     user_uuid = user.id
     today = date.today()
 
     levels_stats = {}
     for level in ["B1", "B2", "C1", "C2"]:
-        levels_stats[level] = {"new": 0, "due": 0, "total": 0}
+        levels_stats[level] = {"new": 0, "due": 0, "total": 0, "seen": 0, "current_batch": 1, "total_batches": 1}
 
-    total_result = await db.execute(select(VocabularyWord.level, func.count(VocabularyWord.id)).group_by(VocabularyWord.level))
+    # Get total words per level
+    total_result = await db.execute(
+        select(VocabularyWord.level, func.count(VocabularyWord.id))
+        .group_by(VocabularyWord.level)
+    )
     for level, count in total_result.all():
         if level in levels_stats:
             levels_stats[level]["total"] = count
-            levels_stats[level]["new"] = count
+            levels_stats[level]["total_batches"] = (count + 49) // 50  # Ceiling division
 
+    # Get user progress per level
     progress_result = await db.execute(
         select(
             VocabularyWord.level,
@@ -456,10 +522,39 @@ async def get_level_stats(
         .where(UserVocabProgress.user_id == user_uuid)
         .group_by(VocabularyWord.level)
     )
+    
     for level, started, due in progress_result.all():
         if level in levels_stats:
-            levels_stats[level]["due"] = int(due) if due is not None else 0
-            levels_stats[level]["new"] = levels_stats[level]["total"] - started
+            seen = started or 0
+            due_count = int(due) if due is not None else 0
+            levels_stats[level]["seen"] = seen
+            levels_stats[level]["due"] = due_count
+            
+            # Calculate current batch
+            current_batch = (seen // 50) + 1
+            words_in_current_batch = seen % 50
+            
+            # If batch is complete (50 words) and no due words, show next batch as current
+            if words_in_current_batch == 0 and seen > 0 and due_count == 0:
+                current_batch = min(current_batch + 1, levels_stats[level]["total_batches"])
+            
+            levels_stats[level]["current_batch"] = current_batch
+            
+            # Calculate new words available
+            # If batch complete but has due words, show 0 new (locked)
+            if words_in_current_batch == 0 and seen > 0 and due_count > 0:
+                levels_stats[level]["new"] = 0
+            else:
+                # Show remaining words in current batch or next batch
+                levels_stats[level]["new"] = min(
+                    50 - words_in_current_batch if words_in_current_batch > 0 else 50,
+                    levels_stats[level]["total"] - seen
+                )
+
+    # For levels with no progress yet, show first batch available
+    for level in levels_stats:
+        if levels_stats[level]["seen"] == 0:
+            levels_stats[level]["new"] = min(50, levels_stats[level]["total"])
 
     return levels_stats
 
@@ -508,3 +603,148 @@ async def get_daily_origin():
     await redis_service.set_cached_response(cache_key, json.dumps(story_data), expire_seconds=86400)
     
     return story_data
+
+
+
+# ─── GET /admin/status ────────────────────────────────────────────
+
+@router.get("/admin/status")
+async def get_vocabulary_status(db: AsyncSession = Depends(get_db)):
+    """
+    Admin endpoint to check vocabulary word counts per level.
+    """
+    result = await db.execute(
+        select(VocabularyWord.level, func.count(VocabularyWord.id))
+        .group_by(VocabularyWord.level)
+        .order_by(VocabularyWord.level)
+    )
+    
+    counts = {}
+    total = 0
+    for level, count in result.all():
+        counts[level] = {
+            "count": count,
+            "batches": (count + 49) // 50,
+            "target": 500,
+            "progress_percent": round((count / 500) * 100, 1)
+        }
+        total += count
+    
+    return {
+        "levels": counts,
+        "total_words": total,
+        "target_total": 2000,
+        "overall_progress_percent": round((total / 2000) * 100, 1)
+    }
+
+
+# ─── POST /admin/generate-words ───────────────────────────────────
+
+class GenerateWordsRequest(BaseModel):
+    level: str
+    count: int = 50
+    category: str = "general"
+
+@router.post("/admin/generate-words")
+async def generate_vocabulary_words(
+    request: GenerateWordsRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Admin endpoint to generate and add new vocabulary words using Groq AI.
+    Generates words in batches to avoid timeouts.
+    """
+    from services.groq_service import client
+    
+    level = request.level.upper()
+    if level not in ("B1", "B2", "C1", "C2"):
+        raise HTTPException(status_code=400, detail="Level must be B1, B2, C1, or C2")
+    
+    # Get existing words to avoid duplicates
+    existing_result = await db.execute(
+        select(VocabularyWord.word)
+        .where(VocabularyWord.level == level)
+    )
+    existing_words = set(w.lower() for w in existing_result.scalars().all())
+    
+    level_descriptions = {
+        "B1": "Intermediate level - common vocabulary for everyday situations, work, and travel",
+        "B2": "Upper-Intermediate level - more nuanced vocabulary for complex discussions",
+        "C1": "Advanced level - sophisticated vocabulary for academic and business topics",
+        "C2": "Mastery level - rare, literary vocabulary for native-like fluency"
+    }
+    
+    prompt = f"""Generate exactly {request.count} English vocabulary words for {level} level ({level_descriptions[level]}).
+Category: {request.category}
+
+Do NOT include these existing words: {list(existing_words)[:30]}
+
+For each word provide:
+- word: The vocabulary word
+- phonetic: Pronunciation guide (e.g., "uh-KOM-plish")
+- meaning: Clear definition (1-2 sentences)
+- roots: Array of etymology with language origin
+- example_sentence: Real-world example in Indian professional context
+
+Return ONLY a valid JSON object with "words" array containing exactly {request.count} word objects."""
+
+    try:
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a vocabulary expert. Return ONLY valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.8,
+            max_tokens=8000
+        )
+        
+        content = response.choices[0].message.content
+        data = json.loads(content)
+        
+        words_list = data.get('words', data) if isinstance(data, dict) else data
+        if not isinstance(words_list, list):
+            for key, val in data.items():
+                if isinstance(val, list):
+                    words_list = val
+                    break
+        
+        added = 0
+        duplicates = 0
+        
+        for word_data in words_list:
+            word_lower = word_data.get('word', '').lower()
+            if word_lower in existing_words:
+                duplicates += 1
+                continue
+            
+            word = VocabularyWord(
+                word=word_data.get('word', ''),
+                phonetic=word_data.get('phonetic', ''),
+                level=level,
+                meaning=word_data.get('meaning', ''),
+                roots=word_data.get('roots', []),
+                example_sentence=word_data.get('example_sentence', '')
+            )
+            db.add(word)
+            existing_words.add(word_lower)
+            added += 1
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "level": level,
+            "requested": request.count,
+            "added": added,
+            "duplicates_skipped": duplicates,
+            "message": f"Successfully added {added} new words to {level}"
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Failed to generate vocabulary words"
+        }

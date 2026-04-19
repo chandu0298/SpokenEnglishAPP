@@ -275,10 +275,39 @@ export default function VocabScreen() {
     setLoading(true);
     try {
       const session = await startSession(MOCK_USER_ID, level, 10);
+      
+      // Check if next batch is locked (need to complete revision first)
+      if (session.batch_info?.next_batch_locked && session.cards.length === 0) {
+        Alert.alert(
+          'Complete Revision First! 🔄',
+          `You have ${session.due_count} words due for revision. Complete your spaced revision to unlock the next batch of words!`,
+          [
+            { text: 'OK' },
+            { 
+              text: 'Go to Revision', 
+              onPress: () => handleStartRevision(level)
+            }
+          ]
+        );
+        setLoading(false);
+        return;
+      }
+      
+      // Check if level is completely done
+      if (session.batch_info?.level_complete) {
+        Alert.alert(
+          'Level Mastered! 🏆',
+          `Congratulations! You've completed all ${session.batch_info.total_words_in_level} words in ${level}. Try a higher level!`,
+          [{ text: 'OK' }]
+        );
+        setLoading(false);
+        return;
+      }
+      
       if (session.cards.length === 0) {
         Alert.alert(
-          'Level Complete! 🎉',
-          'You have learned all words at this level. Try a higher level or use Spaced Revision!',
+          'Batch Complete! 🎉',
+          'Great job! Complete your spaced revision to unlock the next batch of words.',
           [{ text: 'OK' }]
         );
         setLoading(false);
@@ -358,25 +387,39 @@ export default function VocabScreen() {
 
       {/* Level Cards Grid */}
       <View style={styles.levelGrid}>
-        {LEVELS.map((level) => (
-          <TouchableOpacity
-            key={level.id}
-            style={[styles.levelCard, { borderColor: level.color }]}
-            onPress={() => isRevisionMode ? handleStartRevision(level.id) : handleStartSession(level.id)}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.levelEmoji}>{level.emoji}</Text>
-            <Text style={[styles.levelLabel, { color: level.color }]}>{level.label}</Text>
-            <Text style={styles.levelSubtitle}>{level.subtitle}</Text>
-            <View style={[styles.levelBadge, { backgroundColor: level.color }]}>
-              <Text style={styles.levelBadgeText}>
-                {isRevisionMode 
-                  ? `${levelStats[level.id]?.due || 0} to review` 
-                  : `${levelStats[level.id]?.new || 0} new words`}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
+        {LEVELS.map((level) => {
+          const stats = levelStats[level.id];
+          const currentBatch = stats?.current_batch || 1;
+          const totalBatches = stats?.total_batches || 1;
+          
+          return (
+            <TouchableOpacity
+              key={level.id}
+              style={[styles.levelCard, { borderColor: level.color }]}
+              onPress={() => isRevisionMode ? handleStartRevision(level.id) : handleStartSession(level.id)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.levelEmoji}>{level.emoji}</Text>
+              <Text style={[styles.levelLabel, { color: level.color }]}>{level.label}</Text>
+              <Text style={styles.levelSubtitle}>{level.subtitle}</Text>
+              
+              {/* Batch Progress Indicator */}
+              {!isRevisionMode && totalBatches > 1 && (
+                <Text style={styles.batchText}>
+                  Batch {currentBatch}/{totalBatches}
+                </Text>
+              )}
+              
+              <View style={[styles.levelBadge, { backgroundColor: level.color }]}>
+                <Text style={styles.levelBadgeText}>
+                  {isRevisionMode 
+                    ? `${stats?.due || 0} to review` 
+                    : `${stats?.new || 0} new words`}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* Toggle Button */}
@@ -735,6 +778,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  batchText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 4,
+    fontWeight: '500',
   },
   levelBadge: {
     marginTop: Spacing.sm,

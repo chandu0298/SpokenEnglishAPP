@@ -39,6 +39,15 @@ export interface SessionResponse {
   due_count: number;
   new_count: number;
   cards: VocabCard[];
+  batch_info?: {
+    current_batch: number;
+    words_seen_total: number;
+    words_in_current_batch: number;
+    total_words_in_level: number;
+    total_batches: number;
+    level_complete: boolean;
+    next_batch_locked: boolean;
+  };
 }
 
 export interface ResultResponse {
@@ -102,6 +111,9 @@ export interface LevelStats {
   new: number;
   due: number;
   total: number;
+  seen?: number;
+  current_batch?: number;
+  total_batches?: number;
 }
 
 export async function fetchLevelStats(userId: string): Promise<Record<string, LevelStats>> {
