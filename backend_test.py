@@ -10,7 +10,7 @@ import json
 from datetime import datetime
 
 class EchoFluentAPITester:
-    def __init__(self, base_url="https://9c704916-3722-44af-aa7a-382a60851d1b.preview.emergentagent.com"):
+    def __init__(self, base_url="https://mobiletestprev.preview.emergentagent.com"):
         self.base_url = base_url
         self.tests_run = 0
         self.tests_passed = 0

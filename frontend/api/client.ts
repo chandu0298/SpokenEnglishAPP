@@ -4,7 +4,7 @@ import { auth } from '../config/firebase';
 
 // EMERGENT BACKEND URL - Backend is hosted and running
 // This URL works for both iOS simulator and Android emulator
-const BASE_URL = 'https://9c704916-3722-44af-aa7a-382a60851d1b.preview.emergentagent.com'; 
+const BASE_URL = 'https://mobiletestprev.preview.emergentagent.com'; 
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
