@@ -344,7 +344,7 @@ export default function ChatScreen() {
                 if (uri) handleAudioMessage(uri);
               } : startRecording}
             >
-              <Ionicons name={isRecording ? "stop" : "mic"} size={36} color="#FFF" />
+              <Ionicons name={isRecording ? "stop" : "mic"} size={24} color="#FFF" />
             </TouchableOpacity>
           )}
 
@@ -498,17 +498,17 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   mainMicBtn: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
   },
   micBtnActive: {
     backgroundColor: '#EF4444',
