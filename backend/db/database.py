@@ -1,13 +1,19 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from config import settings
+import ssl
 
 Base = declarative_base()
 
+# Create SSL context for Neon PostgreSQL
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
 # Async Engine (Neon PostgreSQL)
 engine = create_async_engine(
-    settings.database_url,
-    connect_args={"ssl": True},
+    settings.database_url.replace("?ssl=true", ""),
+    connect_args={"ssl": ssl_context},
     echo=False,  # Set to True for debugging queries
     future=True
 )
