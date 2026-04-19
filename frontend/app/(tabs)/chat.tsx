@@ -134,7 +134,7 @@ export default function ChatScreen() {
     }
   }
 
-  const handlePlayback = (text: string, messageId: string, rate: number = 0.9) => {
+  const handlePlayback = (text: string, messageId: string, rate: number = 0.72) => {
     // If muted, don't play audio
     if (isMuted) return;
     
@@ -159,6 +159,7 @@ export default function ChatScreen() {
     Speech.speak(text, { 
       language: 'en-US', 
       rate,
+      pitch: 1.05,  // Slightly higher pitch for more natural female voice
       onDone: () => {
         setIsSpeaking(false);
         setIsPaused(false);
