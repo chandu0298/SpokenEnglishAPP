@@ -86,6 +86,12 @@ export default function ChatScreen() {
   async function regenerateResponse(originalQuery: string) {
     if (!originalQuery || loading) return;
     
+    // Stop any playing audio immediately
+    Speech.stop();
+    setIsSpeaking(false);
+    setIsPaused(false);
+    setCurrentSpeakingId(null);
+    
     setLoading(true);
     const tempId = Date.now().toString();
     setMessages(prev => [...prev, { 
